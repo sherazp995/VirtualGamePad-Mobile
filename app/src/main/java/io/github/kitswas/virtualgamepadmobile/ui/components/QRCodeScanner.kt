@@ -46,6 +46,7 @@ fun rememberQRCodeScanner(
             scanOptions.setCameraId(0)
             scanOptions.setBeepEnabled(false)
             scanOptions.setBarcodeImageEnabled(false)
+            scanOptions.setCaptureActivity(QrCaptureActivity::class.java)
             scanLauncher.launch(scanOptions)
         } else {
             onResult(QRScanResult.PermissionDenied)

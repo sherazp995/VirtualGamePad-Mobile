@@ -41,6 +41,7 @@ class SettingsE2ETest {
         // And that we can click 'Reset' and then 'Save'.
 
         composeTestRule.onNodeWithText(getString(R.string.reset)).performClick()
+        composeTestRule.onNodeWithText(getString(R.string.settings_reset_confirm)).performClick()
         composeTestRule.onNodeWithText(getString(R.string.save)).performClick()
 
         composeTestRule.onNodeWithText(getString(R.string.menu_start)).assertIsDisplayed()

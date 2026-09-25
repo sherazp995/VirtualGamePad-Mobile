@@ -5,24 +5,31 @@ import android.content.ClipboardManager
 import android.content.Context.CLIPBOARD_SERVICE
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,14 +43,23 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.kitswas.VGP_Data_Exchange.GamepadReading
 import io.github.kitswas.virtualgamepadmobile.R
+import io.github.kitswas.virtualgamepadmobile.data.ButtonAnchor
 import io.github.kitswas.virtualgamepadmobile.data.ButtonComponent
 import io.github.kitswas.virtualgamepadmobile.data.ButtonConfig
+import io.github.kitswas.virtualgamepadmobile.data.CustomButton
+import io.github.kitswas.virtualgamepadmobile.data.OFFSET_VALUE_RANGE
 import io.github.kitswas.virtualgamepadmobile.data.PreviewBase
+import io.github.kitswas.virtualgamepadmobile.data.SCALE_VALUE_RANGE
 import io.github.kitswas.virtualgamepadmobile.data.SettingsRepository
 import io.github.kitswas.virtualgamepadmobile.data.defaultButtonConfigs
-import io.github.kitswas.virtualgamepadmobile.ui.composables.ButtonConfigEditor
+import io.github.kitswas.virtualgamepadmobile.ui.composables.ChoiceSetting
 import io.github.kitswas.virtualgamepadmobile.ui.composables.DrawGamepad
-import io.github.kitswas.virtualgamepadmobile.ui.composables.ResponsiveGrid
+import io.github.kitswas.virtualgamepadmobile.ui.composables.RowDivider
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SidebarItem
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SliderSetting
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SwitchSetting
+import io.github.kitswas.virtualgamepadmobile.ui.utils.jsonSaver
+import kotlin.math.roundToInt
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
@@ -65,19 +81,17 @@ private fun sanitizeButtonConfigs(configs: Map<ButtonComponent, ButtonConfig>): 
 @Composable
 fun GamepadPreview(
     buttonConfigs: Map<ButtonComponent, ButtonConfig>,
+    customButtons: List<CustomButton>,
 ) {
     val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp
-    val screenWidth = configuration.screenWidthDp
-
     val gamepadState = remember { GamepadReading() }
 
-    // Draw the gamepad with current configuration
     DrawGamepad(
-        widthDp = screenWidth,
-        heightDp = screenHeight,
+        widthDp = configuration.screenWidthDp,
+        heightDp = configuration.screenHeightDp,
         gamepadState = gamepadState,
-        buttonConfigs = buttonConfigs
+        buttonConfigs = buttonConfigs,
+        customButtons = customButtons,
     )
 }
 
@@ -87,11 +101,11 @@ fun GamepadCustomizationScreen(
     settingsRepository: SettingsRepository
 ) {
     val buttonConfigs by settingsRepository.buttonConfigs.collectAsState(initial = defaultButtonConfigs)
-    var modifiedConfigs by rememberSaveable {
-        mutableStateOf<Map<ButtonComponent, ButtonConfig>?>(
-            null
-        )
+    val customButtons by settingsRepository.customButtons.collectAsState(initial = emptyList())
+    var modifiedConfigs by rememberSaveable(stateSaver = jsonSaver<Map<ButtonComponent, ButtonConfig>>()) {
+        mutableStateOf(null)
     }
+    var selected by rememberSaveable { mutableStateOf(ButtonComponent.entries.first()) }
     var showPreview by rememberSaveable { mutableStateOf(false) }
     var showExportDialog by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
@@ -99,6 +113,11 @@ fun GamepadCustomizationScreen(
 
     // Get the current configs to preview (modified or saved)
     val currentConfigs = modifiedConfigs ?: buttonConfigs
+    val config = currentConfigs[selected] ?: ButtonConfig.default(selected)
+
+    fun update(change: (ButtonConfig) -> ButtonConfig) {
+        modifiedConfigs = currentConfigs + (selected to change(config))
+    }
 
     // Handle back button to close preview
     BackHandler(enabled = showPreview) {
@@ -107,7 +126,7 @@ fun GamepadCustomizationScreen(
 
     if (showPreview) {
         // Full-screen preview overlay
-        GamepadPreview(buttonConfigs = currentConfigs)
+        GamepadPreview(buttonConfigs = currentConfigs, customButtons = customButtons)
         return
     }
 
@@ -136,127 +155,152 @@ fun GamepadCustomizationScreen(
     }
 
     Scaffold { paddingValues ->
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(paddingValues)
         ) {
-            // Fixed title at the top
-            Text(
-                stringResource(R.string.customization_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+            // Every control on the left, the screen's actions pinned below them.
+            Column(
+                modifier = Modifier
+                    .width(240.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(
+                    stringResource(R.string.customization_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    ButtonComponent.entries.forEach { component ->
+                        SidebarItem(
+                            label = stringResource(component.nameRes),
+                            selected = component == selected,
+                            onClick = { selected = component },
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Button(
+                        onClick = {
+                            modifiedConfigs?.let { configs ->
+                                runBlocking {
+                                    try {
+                                        settingsRepository.setAllButtonConfigs(configs)
+                                        Log.i(logTag, "Button configs saved")
+                                    } catch (e: Exception) {
+                                        Log.e(logTag, "Error saving button configs", e)
+                                    }
+                                }
+                            }
+                            onNavigateBack()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.save))
+                    }
+                    OutlinedButton(onClick = onNavigateBack, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            }
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            // Scrollable button configuration content with responsive grid
-            val scrollState = rememberScrollState()
+            // The selected control's settings.
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .fillMaxHeight()
             ) {
-                Text(
-                    stringResource(R.string.customization_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-
-                val minCardWidth = 420.dp
-                // Responsive grid that dynamically calculates columns and batches items
-                ResponsiveGrid(
-                    items = ButtonComponent.entries.toList(),
-                    minItemWidth = minCardWidth,
-                    horizontalSpacing = 8.dp,
-                    verticalSpacing = 8.dp,
-                ) { component ->
-                    val config = if (modifiedConfigs != null) {
-                        modifiedConfigs!![component] ?: ButtonConfig.default(component)
-                    } else {
-                        buttonConfigs[component] ?: ButtonConfig.default(component)
-                    }
-
-                    val onConfigChange = remember(component) {
-                        { newConfig: ButtonConfig ->
-                            val currentConfigs = modifiedConfigs ?: buttonConfigs
-                            modifiedConfigs = currentConfigs + (component to newConfig)
-                        }
-                    }
-
-                    ButtonConfigEditor(
-                        component = component,
-                        config = config,
-                        onConfigChange = onConfigChange,
-                        modifier = Modifier.widthIn(min = minCardWidth)
-                    )
-                }
-            }
-
-            // Fixed buttons at the bottom
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Import/Export and Preview buttons
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(onClick = { showExportDialog = true }) {
-                        Text(stringResource(R.string.customization_export))
-                    }
-                    Button(
-                        onClick = { showPreview = true },
-                    ) {
+                    Text(
+                        stringResource(selected.nameRes),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { showPreview = true }) {
                         Text(stringResource(R.string.customization_preview))
                     }
-                    Button(onClick = { showImportDialog = true }) {
+                    TextButton(onClick = { showImportDialog = true }) {
                         Text(stringResource(R.string.customization_import))
                     }
-                }
-
-                // Action buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(onClick = {
-                        modifiedConfigs = null
-                        runBlocking {
-                            settingsRepository.setAllButtonConfigs(defaultButtonConfigs)
-                        }
-                        Log.i(logTag, "Button configs reset to defaults")
-                    }) {
+                    TextButton(onClick = { showExportDialog = true }) {
+                        Text(stringResource(R.string.customization_export))
+                    }
+                    // Unsaved until Save, like every other change here, so Cancel undoes it.
+                    TextButton(onClick = { modifiedConfigs = defaultButtonConfigs }) {
                         Text(stringResource(R.string.reset))
                     }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.primary)
 
-                    Button(onClick = {
-                        modifiedConfigs?.let { configs ->
-                            runBlocking {
-                                try {
-                                    settingsRepository.setAllButtonConfigs(configs)
-                                    Log.i(logTag, "Button configs saved")
-                                } catch (e: Exception) {
-                                    Log.e(
-                                        logTag, "Error saving button configs", e
-                                    )
-                                }
-                            }
-                        }
-                        onNavigateBack()
-                    }) {
-                        Text(stringResource(R.string.save))
-                    }
-
-                    Button(onClick = onNavigateBack) {
-                        Text(stringResource(R.string.cancel))
-                    }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(key(selected) { rememberScrollState() })
+                ) {
+                    SwitchSetting(
+                        title = stringResource(R.string.button_visible),
+                        description = stringResource(R.string.layout_row_visible_desc),
+                        checked = config.visible,
+                        onCheckedChange = { visible -> update { it.copy(visible = visible) } },
+                    )
+                    RowDivider()
+                    ChoiceSetting(
+                        title = stringResource(R.string.button_anchor_position),
+                        options = ButtonAnchor.entries,
+                        selected = config.anchor,
+                        optionLabel = { stringResource(it.nameRes) },
+                        onSelect = { anchor -> update { it.copy(anchor = anchor) } },
+                    )
+                    RowDivider()
+                    SliderSetting(
+                        title = stringResource(R.string.layout_row_size),
+                        valueLabel = stringResource(R.string.value_scale, config.scale),
+                        value = config.scale,
+                        range = SCALE_VALUE_RANGE,
+                        onValueChange = { scale -> update { it.copy(scale = scale) } },
+                    )
+                    RowDivider()
+                    SliderSetting(
+                        title = stringResource(R.string.layout_row_horizontal),
+                        valueLabel = stringResource(R.string.value_offset, config.offsetX),
+                        value = config.offsetX,
+                        range = OFFSET_VALUE_RANGE,
+                        onValueChange = { x -> update { it.copy(offsetX = x) } },
+                    )
+                    RowDivider()
+                    SliderSetting(
+                        title = stringResource(R.string.layout_row_vertical),
+                        valueLabel = stringResource(R.string.value_offset, config.offsetY),
+                        value = config.offsetY,
+                        range = OFFSET_VALUE_RANGE,
+                        onValueChange = { y -> update { it.copy(offsetY = y) } },
+                    )
+                    RowDivider()
+                    SliderSetting(
+                        title = stringResource(R.string.layout_row_rotation),
+                        valueLabel = stringResource(R.string.value_degrees, config.rotation),
+                        value = config.rotation,
+                        range = 0f..359f,
+                        onValueChange = { degrees -> update { it.copy(rotation = degrees.roundToInt().toFloat()) } },
+                    )
                 }
             }
         }

@@ -2,7 +2,11 @@
     <string name="app_name">VirtualGamePadMobile</string>
 
     <!-- Main Menu -->
-    <string name="menu_start">Start</string>
+    <string name="menu_start">New Connection</string>
+    <string name="home_title">VirtualGamePad</string>
+    <string name="home_saved_connections">Saved Connections</string>
+    <string name="home_no_saved_connections">No saved connections yet.\nOpen New Connection, fill it in, and tap Save.</string>
+    <string name="home_delete_connection">Delete %1$s</string>
     <string name="menu_settings">Settings</string>
     <string name="menu_about">About</string>
     <string name="menu_exit">Exit</string>
@@ -11,13 +15,54 @@
     <string name="settings_title">Settings</string>
     <string name="settings_theme_color">Theme Color</string>
     <string name="settings_color_scheme">Color Scheme</string>
-    <string name="settings_polling_interval">Polling Interval (ms)</string>
-    <string name="settings_polling_interval_desc">Adjust according to your reflexes\nLower is faster</string>
-    <string name="settings_polling_interval_info">Information about polling interval</string>
-    <string name="settings_haptic_feedback">Haptic Feedback (Vibrations)</string>
-    <string name="settings_save_connection_credentials">Remember IP Address and Port</string>
+    <string name="settings_section_controls">Controls</string>
+    <string name="settings_section_layout">Gamepad Layout</string>
+    <string name="settings_section_display">Display</string>
+    <string name="settings_section_connection">Connection</string>
+    <string name="settings_polling_interval">Polling Interval</string>
+    <string name="settings_polling_interval_desc">How often inputs are sent. Lower is faster.</string>
+    <string name="settings_haptic_feedback">Haptic Feedback</string>
+    <string name="settings_haptic_feedback_desc">Vibrate when you press a button</string>
+    <string name="settings_save_connection_credentials">Remember Connection</string>
+    <string name="settings_save_connection_credentials_desc">Fill in the last IP address and port</string>
     <string name="settings_full_screen">Full Screen</string>
-    <string name="settings_customize_layout">Customize Gamepad Layout</string>
+    <string name="settings_full_screen_desc">Hide the status and navigation bars</string>
+    <string name="settings_customize_layout">Advanced Layout Settings</string>
+    <string name="settings_customize_layout_desc">Exact values, visibility, import and export</string>
+    <string name="settings_edit_layout_visually">Edit Layout Visually</string>
+    <string name="settings_edit_layout_visually_desc">Move and resize controls on the gamepad</string>
+    <string name="settings_reset_title">Reset all settings?</string>
+    <string name="settings_reset_desc">This also resets your gamepad layout. It can\'t be undone.</string>
+    <string name="settings_reset_confirm">Reset Everything</string>
+    <string name="value_ms">%1$d ms</string>
+    <string name="layout_editor_move">Move</string>
+    <string name="layout_editor_resize">Resize</string>
+    <string name="layout_editor_rotate">Rotate</string>
+    <string name="layout_editor_hint_rotate">Swipe left or right to turn it</string>
+    <string name="layout_editor_add_button">Add Button</string>
+    <string name="layout_editor_edit_button">Edit Button</string>
+    <string name="layout_editor_delete_button">Delete Button</string>
+    <string name="layout_editor_custom_button">Button %1$d</string>
+    <string name="layout_editor_combo_title">Button %1$d presses</string>
+    <string name="layout_editor_combo_desc">Holding the button presses everything you tick here.</string>
+    <string name="combo_dpad_up">D-pad Up</string>
+    <string name="combo_dpad_down">D-pad Down</string>
+    <string name="combo_dpad_left">D-pad Left</string>
+    <string name="combo_dpad_right">D-pad Right</string>
+    <string name="combo_lb">LB</string>
+    <string name="combo_rb">RB</string>
+    <string name="combo_view">View</string>
+    <string name="combo_menu">Menu</string>
+    <string name="combo_left_stick">Left Stick Click</string>
+    <string name="combo_right_stick">Right Stick Click</string>
+    <string name="layout_editor_hint_select">Tap a control or use the arrows</string>
+    <string name="layout_editor_hint_move">Swipe anywhere to move it</string>
+    <string name="layout_editor_hint_resize">Swipe up to grow, down to shrink</string>
+    <string name="layout_editor_none_selected">Nothing selected</string>
+    <string name="layout_editor_hide">Hide</string>
+    <string name="layout_editor_show">Show</string>
+    <string name="layout_editor_previous">Select previous control</string>
+    <string name="layout_editor_next">Select next control</string>
     <string name="settings_error_save">Error saving settings</string>
 
     <!-- About Screen -->
@@ -32,10 +77,9 @@
     <string name="about_dev_version">Development</string>
 
     <!-- Gamepad Customization -->
-    <string name="customization_title">Gamepad Customization</string>
-    <string name="customization_desc">Customize individual button visibility, size, and position</string>
+    <string name="customization_title">Advanced Layout</string>
     <string name="customization_export">Export</string>
-    <string name="customization_preview">Preview Gamepad</string>
+    <string name="customization_preview">Preview</string>
     <string name="customization_import">Import</string>
     <string name="customization_export_title">Export Configuration</string>
     <string name="customization_export_desc">Copy this JSON to share or backup your configuration:</string>
@@ -60,6 +104,13 @@
     <string name="connect_ip_label">IP Address</string>
     <string name="connect_port_label">Port</string>
     <string name="connect_button">Connect</string>
+    <string name="connection_channel_name">Connection</string>
+    <string name="connection_notification_title">Connected to PC</string>
+    <string name="connect_name_label">Name (optional)</string>
+    <string name="connect_details">Connection Details</string>
+    <string name="connect_hint">Find the IP address and port in the VirtualGamePad server on your PC, or scan its QR code.</string>
+    <string name="connect_save">Save</string>
+    <string name="connect_saved">Saved as %1$s</string>
     <string name="connect_download_server">Download Server</string>
 
     <!-- Connecting Screen -->
@@ -167,17 +218,18 @@
     <!-- Composables & Buttons -->
     <string name="button_lt">LT</string>
     <string name="button_rt">RT</string>
-    <string name="button_l_shoulder">LSHLDR</string>
-    <string name="button_r_shoulder">RSHLDR</string>
+    <string name="button_l_shoulder">LB</string>
+    <string name="button_r_shoulder">RB</string>
     <string name="button_visible">Visible</string>
-    <string name="button_hidden">Hidden</string>
     <string name="button_anchor_position">Anchor Position</string>
-    <string name="button_scale_format">Scale: %.2fx</string>
-    <string name="button_offset_x_format">Offset X: %.2f× baseDp</string>
-    <string name="button_offset_y_format">Offset Y: %.2f× baseDp</string>
-    <string name="content_desc_decrease">Decrease</string>
-    <string name="content_desc_increase">Increase</string>
-    <string name="content_desc_expand">Expand</string>
+    <string name="layout_row_visible_desc">Show this control on the gamepad</string>
+    <string name="layout_row_size">Size</string>
+    <string name="layout_row_horizontal">Horizontal Position</string>
+    <string name="layout_row_vertical">Vertical Position</string>
+    <string name="layout_row_rotation">Rotation</string>
+    <string name="value_scale">%.2fx</string>
+    <string name="value_offset">%+.2f</string>
+    <string name="value_degrees">%.0f°</string>
     <string name="content_desc_button">%s Button</string>
     <string name="content_desc_dpad_button">Dpad Button %s</string>
 

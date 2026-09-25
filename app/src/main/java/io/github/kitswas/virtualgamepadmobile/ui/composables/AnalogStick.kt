@@ -1,11 +1,13 @@
 package io.github.kitswas.virtualgamepadmobile.ui.composables
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -14,7 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -25,10 +27,14 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.kitswas.VGP_Data_Exchange.GameButtons
 import io.github.kitswas.VGP_Data_Exchange.GamepadReading
-import io.github.kitswas.virtualgamepadmobile.ui.theme.darken
-import io.github.kitswas.virtualgamepadmobile.ui.theme.lighten
+import io.github.kitswas.virtualgamepadmobile.data.HeldInputs
+import io.github.kitswas.virtualgamepadmobile.ui.theme.gamepadStyle
+import io.github.kitswas.virtualgamepadmobile.ui.theme.gamepadSurface
 import io.github.kitswas.virtualgamepadmobile.ui.utils.HapticUtils
+import androidx.compose.ui.geometry.Offset
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 enum class AnalogStickType {
@@ -79,11 +85,23 @@ private fun resetAnalogStick(
     updateThumbstickValues(type, gamepadState, 0f, 0f)
 }
 
+/**
+ * Turns a direction measured inside a stick rotated [degrees] clockwise into the
+ * direction on screen, so pushing right always sends right whatever the rotation.
+ */
+internal fun screenDirection(x: Float, y: Float, degrees: Float): Offset {
+    val radians = Math.toRadians(degrees.toDouble())
+    val cos = cos(radians).toFloat()
+    val sin = sin(radians).toFloat()
+    return Offset(x * cos - y * sin, x * sin + y * cos)
+}
+
 private fun handleAnalogDrag(
     state: AnalogStickUiState,
     dragX: Float,
     dragY: Float,
     maxOffset: Float,
+    rotation: Float,
     type: AnalogStickType,
     gamepadState: GamepadReading,
     view: android.view.View,
@@ -104,7 +122,9 @@ private fun handleAnalogDrag(
     val scaleFactor = if (magnitude > maxOffset) maxOffset / magnitude else 1f
     state.visualX = state.offsetX * scaleFactor
     state.visualY = state.offsetY * scaleFactor
-    updateThumbstickValues(type, gamepadState, state.visualX / maxOffset, state.visualY / maxOffset)
+    // The knob moves in the stick's own (rotated) frame; the PC gets the screen direction.
+    val onScreen = screenDirection(state.visualX, state.visualY, rotation)
+    updateThumbstickValues(type, gamepadState, onScreen.x / maxOffset, onScreen.y / maxOffset)
 }
 
 private fun toggleThumbstickButton(
@@ -116,102 +136,101 @@ private fun toggleThumbstickButton(
     val mask = thumbstickButtonMask(type)
     if (!state.isPressed) {
         state.isPressed = true
-        gamepadState.ButtonsDown = gamepadState.ButtonsDown or mask
+        HeldInputs.of(gamepadState).press(mask)
         HapticUtils.performButtonPressFeedback(view)
         return
     }
 
     state.isPressed = false
-    gamepadState.ButtonsDown = gamepadState.ButtonsDown and mask.inv()
-    gamepadState.ButtonsUp = gamepadState.ButtonsUp or mask
+    HeldInputs.of(gamepadState).release(mask)
     HapticUtils.performGestureEndFeedback(view)
 }
 
 @Composable
 fun AnalogStick(
     modifier: Modifier = Modifier,
-    ringColor: Color = MaterialTheme.colorScheme.outline,
-    ringWidth: Dp = 4.dp,
-    outerCircleColor: Color = darken(MaterialTheme.colorScheme.primary, 0.8f),
     outerCircleWidth: Dp = 4.dp,
-    innerCircleColor: Color = lighten(MaterialTheme.colorScheme.primary, 0.2f),
     innerCircleRadius: Dp = 32.dp,
+    rotation: Float = 0f,
     gamepadState: GamepadReading,
     type: AnalogStickType,
 ) {
     val density = LocalDensity.current
     val view = LocalView.current
+    val style = gamepadStyle()
+    val state = remember { AnalogStickUiState() }
+    var dragging by remember { mutableStateOf(false) }
 
+    // Calculate maximum offset once
+    val maxOffset = with(density) {
+        (innerCircleRadius + outerCircleWidth).toPx()
+    }
+
+    // The base: an outlined, see-through disc the knob travels inside.
     Box(
-        modifier = modifier.testTag("AnalogStick_${type.name}"),
+        modifier = modifier
+            .testTag("AnalogStick_${type.name}")
+            .size((innerCircleRadius + outerCircleWidth) * 2)
+            .gamepadSurface(CircleShape, pressed = false, style = style),
         contentAlignment = Alignment.Center
     ) {
-        // First draw the glow ring
-        Circle(
-            colour = ringColor,
+        // The knob: solid enough to find at a glance, brighter while held.
+        val knobActive = dragging || state.isPressed
+        Box(
             modifier = Modifier
-                .size((innerCircleRadius + outerCircleWidth + ringWidth) * 2),
-            contentAlignment = Alignment.Center
-        ) {
-            // Then draw the outer circle
-            Circle(
-                modifier = Modifier
-                    .size((innerCircleRadius + outerCircleWidth) * 2),
-                contentAlignment = Alignment.Center,
-                colour = outerCircleColor,
-            ) {
-                val state = remember { AnalogStickUiState() }
-
-                // Calculate maximum offset once
-                val maxOffset = with(density) {
-                    (innerCircleRadius + outerCircleWidth).toPx()
+                .testTag("AnalogStick_${type.name}_Handle")
+                .size(innerCircleRadius * 2)
+                .offset {
+                    IntOffset(
+                        state.visualX.roundToInt(),
+                        state.visualY.roundToInt()
+                    )
                 }
-
-                // Then draw the inner circle
-                Circle(
-                    colour = innerCircleColor,
-                    modifier = Modifier
-                        .testTag("AnalogStick_${type.name}_Handle")
-                        .size(innerCircleRadius * 2)
-                        .offset {
-                            IntOffset(
-                                state.visualX.roundToInt(),
-                                state.visualY.roundToInt()
+                .clip(CircleShape)
+                .background(style.glyph.copy(alpha = if (knobActive) 0.45f else 0.22f))
+                .border(
+                    style.outlineWidth,
+                    if (knobActive) style.pressedOutline else style.outline,
+                    CircleShape
+                )
+                .pointerInput(rotation) {
+                    detectDragGestures(
+                        onDragStart = { _ ->
+                            dragging = true
+                            HapticUtils.performGestureStartFeedback(view)
+                        },
+                        onDragEnd = {
+                            dragging = false
+                            resetAnalogStick(state, type, gamepadState)
+                            HapticUtils.performGestureEndFeedback(view)
+                        },
+                        onDragCancel = {
+                            dragging = false
+                            resetAnalogStick(state, type, gamepadState)
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            handleAnalogDrag(
+                                state = state,
+                                dragX = dragAmount.x,
+                                dragY = dragAmount.y,
+                                maxOffset = maxOffset,
+                                rotation = rotation,
+                                type = type,
+                                gamepadState = gamepadState,
+                                view = view,
                             )
                         }
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = { _ ->
-                                    HapticUtils.performGestureStartFeedback(view)
-                                },
-                                onDragEnd = {
-                                    resetAnalogStick(state, type, gamepadState)
-                                    HapticUtils.performGestureEndFeedback(view)
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    handleAnalogDrag(
-                                        state = state,
-                                        dragX = dragAmount.x,
-                                        dragY = dragAmount.y,
-                                        maxOffset = maxOffset,
-                                        type = type,
-                                        gamepadState = gamepadState,
-                                        view = view,
-                                    )
-                                }
-                            )
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = { _ ->
+                            toggleThumbstickButton(state, type, gamepadState, view)
                         }
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onLongPress = { _ ->
-                                    toggleThumbstickButton(state, type, gamepadState, view)
-                                }
-                            )
-                        }
-                ) {}
-            }
-        }
+                    )
+                }
+        )
     }
 }
 

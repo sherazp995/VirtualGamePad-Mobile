@@ -10,7 +10,8 @@ import kotlinx.serialization.Serializable
 
 // Centralized value ranges for button configuration
 val SCALE_VALUE_RANGE = 0.5f..2f
-val OFFSET_VALUE_RANGE = -0.5f..0.5f
+// Wide enough to reach the far side of a landscape screen (width is about twice the height).
+val OFFSET_VALUE_RANGE = -2.5f..2.5f
 
 /**
  * Anchor point for button positioning
@@ -81,9 +82,51 @@ data class ButtonConfig(
     val scale: Float = 1.0f,
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
-    val anchor: ButtonAnchor = component.defaultAnchor
+    val anchor: ButtonAnchor = component.defaultAnchor,
+    val rotation: Float = 0f,
 ) : Parcelable {
+    val placement: Placement
+        get() = Placement(visible, scale, offsetX, offsetY, anchor, rotation)
+
+    fun with(placement: Placement) = copy(
+        visible = placement.visible,
+        scale = placement.scale,
+        offsetX = placement.offsetX,
+        offsetY = placement.offsetY,
+        anchor = placement.anchor,
+        rotation = placement.rotation,
+    )
+
     companion object {
         fun default(component: ButtonComponent) = ButtonConfig(component)
     }
+}
+
+/**
+ * Where a control sits on the gamepad and how it looks there. Built-in controls and
+ * custom buttons both have one, so the layout editor treats them the same way.
+ *
+ * @param offsetX multiplier of the screen height, added to the anchor position
+ * @param rotation clockwise, in degrees
+ */
+@Immutable
+@Serializable
+@Parcelize
+data class Placement(
+    val visible: Boolean = true,
+    val scale: Float = 1.0f,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+    val anchor: ButtonAnchor = ButtonAnchor.CENTER,
+    val rotation: Float = 0f,
+) : Parcelable
+
+/** Anything the layout editor can select: a built-in control or a custom button. */
+@Immutable
+sealed interface LayoutItem : Parcelable {
+    @Parcelize
+    data class BuiltIn(val component: ButtonComponent) : LayoutItem
+
+    @Parcelize
+    data class Custom(val id: String) : LayoutItem
 }

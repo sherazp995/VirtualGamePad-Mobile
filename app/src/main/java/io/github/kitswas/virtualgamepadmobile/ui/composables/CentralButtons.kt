@@ -1,28 +1,23 @@
 package io.github.kitswas.virtualgamepadmobile.ui.composables
 
-import android.util.Log
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -30,27 +25,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.kitswas.VGP_Data_Exchange.GameButtons
-import io.github.kitswas.VGP_Data_Exchange.GamepadReading
 import io.github.kitswas.virtualgamepadmobile.R
-import io.github.kitswas.virtualgamepadmobile.data.ButtonAnchor
+import io.github.kitswas.virtualgamepadmobile.data.PadInput
 import io.github.kitswas.virtualgamepadmobile.data.ButtonComponent
 import io.github.kitswas.virtualgamepadmobile.data.ButtonConfig
-import io.github.kitswas.virtualgamepadmobile.ui.utils.HapticUtils
-
-/**
- * Convert ButtonAnchor to Compose Alignment
- */
-private fun ButtonAnchor.toAlignment(): Alignment = when (this) {
-    ButtonAnchor.TOP_LEFT -> Alignment.TopStart
-    ButtonAnchor.TOP_CENTER -> Alignment.TopCenter
-    ButtonAnchor.TOP_RIGHT -> Alignment.TopEnd
-    ButtonAnchor.CENTER_LEFT -> Alignment.CenterStart
-    ButtonAnchor.CENTER -> Alignment.Center
-    ButtonAnchor.CENTER_RIGHT -> Alignment.CenterEnd
-    ButtonAnchor.BOTTOM_LEFT -> Alignment.BottomStart
-    ButtonAnchor.BOTTOM_CENTER -> Alignment.BottomCenter
-    ButtonAnchor.BOTTOM_RIGHT -> Alignment.BottomEnd
-}
+import io.github.kitswas.virtualgamepadmobile.ui.theme.gamepadStyle
+import io.github.kitswas.virtualgamepadmobile.ui.theme.gamepadSurface
+import io.github.kitswas.virtualgamepadmobile.data.LayoutItem
 
 enum class ShoulderButtonType {
     LEFT, RIGHT
@@ -65,9 +46,7 @@ fun ShoulderButton(
     type: ShoulderButtonType,
     modifier: Modifier = Modifier,
     size: Dp,
-    gamepadState: GamepadReading,
 ) {
-    val view = LocalView.current
     val gameButton = when (type) {
         ShoulderButtonType.LEFT -> GameButtons.LeftShoulder
         ShoulderButtonType.RIGHT -> GameButtons.RightShoulder
@@ -77,35 +56,20 @@ fun ShoulderButton(
         ShoulderButtonType.RIGHT -> stringResource(R.string.button_r_shoulder)
     }
 
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    val key = remember { Any() }
+    val isPressed = isHeld(key)
 
-    // See https://stackoverflow.com/a/69157877/8659747
-    if (isPressed) {
-        Log.d(gameButton.name, "Pressed")
-        HapticUtils.performButtonPressFeedback(view)
-        gamepadState.ButtonsDown = gamepadState.ButtonsDown or gameButton.value
-        //Use if + DisposableEffect to wait for the press action is completed
-        DisposableEffect(Unit) {
-            onDispose {
-                Log.d(gameButton.name, "Released")
-                HapticUtils.performButtonReleaseFeedback(view)
-                gamepadState.ButtonsDown =
-                    gamepadState.ButtonsDown and gameButton.value.inv()
-                gamepadState.ButtonsUp = gamepadState.ButtonsUp or gameButton.value
-            }
-        }
-    }
-
-    Button(
+    val style = gamepadStyle()
+    Box(
         modifier = modifier
-            .heightIn(min = size)
-            .widthIn(min = size * 1.5f),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
-        onClick = { },
-        interactionSource = interactionSource,
+            .height(size)
+            .width(size * 1.8f)
+            .buttonTarget(key, PadInput(buttons = gameButton.value), round = false)
+            .semantics { role = Role.Button }
+            .gamepadSurface(RoundedCornerShape(percent = 50), isPressed, style),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(text)
+        Text(text, color = style.glyph, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -114,9 +78,7 @@ fun MenuButton(
     type: MenuButtonType,
     modifier: Modifier = Modifier,
     size: Dp,
-    gamepadState: GamepadReading,
 ) {
-    val view = LocalView.current
     val gameButton = when (type) {
         MenuButtonType.VIEW -> GameButtons.View
         MenuButtonType.MENU -> GameButtons.Menu
@@ -126,45 +88,31 @@ fun MenuButton(
         MenuButtonType.MENU -> painterResource(R.drawable.ic_menu)
     }
 
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    val key = remember { Any() }
+    val isPressed = isHeld(key)
 
-    // See https://stackoverflow.com/a/69157877/8659747
-    if (isPressed) {
-        Log.d(gameButton.name, "Pressed")
-        HapticUtils.performButtonPressFeedback(view)
-        gamepadState.ButtonsDown = gamepadState.ButtonsDown or gameButton.value
-        //Use if + DisposableEffect to wait for the press action is completed
-        DisposableEffect(Unit) {
-            onDispose {
-                Log.d(gameButton.name, "Released")
-                HapticUtils.performButtonReleaseFeedback(view)
-                gamepadState.ButtonsDown =
-                    gamepadState.ButtonsDown and gameButton.value.inv()
-                gamepadState.ButtonsUp = gamepadState.ButtonsUp or gameButton.value
-            }
-        }
-    }
-
-    OutlinedIconButton(
-        modifier = modifier.size(size),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
-        onClick = { },
-        interactionSource = interactionSource,
+    val style = gamepadStyle()
+    Box(
+        modifier = modifier
+            .size(size)
+            .buttonTarget(key, PadInput(buttons = gameButton.value), round = true)
+            .semantics { role = Role.Button }
+            .gamepadSurface(CircleShape, isPressed, style),
+        contentAlignment = Alignment.Center,
     ) {
         if (iconPainter != null) {
             Icon(
                 painter = iconPainter,
                 contentDescription = stringResource(R.string.content_desc_button, gameButton.name),
                 modifier = Modifier.size(size / 2),
-                tint = MaterialTheme.colorScheme.primary
+                tint = style.glyph
             )
         } else {
             Icon(
                 imageVector = ImageVector.vectorResource(R.drawable.screenicon),
                 contentDescription = stringResource(R.string.content_desc_button, gameButton.name),
                 modifier = Modifier.size(size / 2),
-                tint = MaterialTheme.colorScheme.primary
+                tint = style.glyph
             )
         }
     }
@@ -175,78 +123,63 @@ fun MenuButton(
  */
 @Composable
 fun CentralButtons(
-    modifier: Modifier = Modifier,
     baseDp: Int,
-    gamepadState: GamepadReading,
     buttonConfigs: Map<ButtonComponent, ButtonConfig>,
+    itemModifier: (LayoutItem) -> Modifier = { Modifier },
+    showHidden: Boolean = false,
 ) {
     // Helper function to get config for a component
     fun getConfig(component: ButtonComponent) =
         buttonConfigs[component] ?: ButtonConfig.default(component)
 
-    // Helper function to render a button component with its anchor
+    // Helper function to render a button component at its configured position
     @Composable
-    fun RenderButton(component: ButtonComponent, content: @Composable (ButtonConfig) -> Unit) {
+    fun RenderButton(
+        component: ButtonComponent,
+        content: @Composable (config: ButtonConfig, placement: Modifier) -> Unit
+    ) {
         val config = getConfig(component)
-        if (config.visible) {
-            Box(
-                modifier = modifier.fillMaxSize(),
-                contentAlignment = config.anchor.toAlignment()
-            ) {
-                content(config)
-            }
-        }
+        Placed(
+            placement = config.placement,
+            baseDp = baseDp,
+            showHidden = showHidden,
+            itemModifier = itemModifier(LayoutItem.BuiltIn(component)),
+        ) { placement -> content(config, placement) }
     }
 
     // Left Shoulder button
-    RenderButton(ButtonComponent.LEFT_SHOULDER) { config ->
+    RenderButton(ButtonComponent.LEFT_SHOULDER) { config, placement ->
         ShoulderButton(
             type = ShoulderButtonType.LEFT,
-            modifier = Modifier.offset(
-                x = (config.offsetX * baseDp).dp,
-                y = (config.offsetY * baseDp).dp
-            ),
+            modifier = placement,
             size = (baseDp / 8 * config.scale).dp,
-            gamepadState = gamepadState,
         )
     }
 
     // Right Shoulder button
-    RenderButton(ButtonComponent.RIGHT_SHOULDER) { config ->
+    RenderButton(ButtonComponent.RIGHT_SHOULDER) { config, placement ->
         ShoulderButton(
             type = ShoulderButtonType.RIGHT,
-            modifier = Modifier.offset(
-                x = (config.offsetX * baseDp).dp,
-                y = (config.offsetY * baseDp).dp
-            ),
+            modifier = placement,
             size = (baseDp / 8 * config.scale).dp,
-            gamepadState = gamepadState,
         )
     }
 
     // Select button (View)
-    RenderButton(ButtonComponent.SELECT_BUTTON) { config ->
+    RenderButton(ButtonComponent.SELECT_BUTTON) { config, placement ->
         MenuButton(
             type = MenuButtonType.VIEW,
-            modifier = Modifier.offset(
-                x = (config.offsetX * baseDp).dp,
-                y = (config.offsetY * baseDp).dp
-            ),
+            modifier = placement,
             size = (baseDp / 8 * config.scale).dp,
-            gamepadState = gamepadState,
         )
     }
 
     // Start button (Menu)
-    RenderButton(ButtonComponent.START_BUTTON) { config ->
+    RenderButton(ButtonComponent.START_BUTTON) { config, placement ->
         MenuButton(
             type = MenuButtonType.MENU,
-            modifier = Modifier.offset(
-                x = (config.offsetX * baseDp).dp,
-                y = (config.offsetY * baseDp).dp
-            ),
+            modifier = placement,
             size = (baseDp / 8 * config.scale).dp,
-            gamepadState = gamepadState,
         )
     }
 }
@@ -256,7 +189,6 @@ fun CentralButtons(
 fun CentralButtonsPreview() {
     CentralButtons(
         baseDp = 400,
-        gamepadState = GamepadReading(),
         buttonConfigs = io.github.kitswas.virtualgamepadmobile.data.defaultButtonConfigs,
     )
 }

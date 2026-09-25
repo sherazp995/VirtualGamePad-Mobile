@@ -5,8 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -23,6 +25,7 @@ import io.github.kitswas.virtualgamepadmobile.data.defaultColorScheme
 import io.github.kitswas.virtualgamepadmobile.data.defaultFullScreenEnabled
 import io.github.kitswas.virtualgamepadmobile.data.defaultHapticFeedbackEnabled
 import io.github.kitswas.virtualgamepadmobile.data.defaultSaveConnectionCredentials
+import io.github.kitswas.virtualgamepadmobile.network.ConnectionService
 import io.github.kitswas.virtualgamepadmobile.network.ConnectionViewModel
 import io.github.kitswas.virtualgamepadmobile.network.ConnectionViewModelFactory
 import io.github.kitswas.virtualgamepadmobile.ui.screens.AboutScreen
@@ -30,11 +33,13 @@ import io.github.kitswas.virtualgamepadmobile.ui.screens.ConnectMenu
 import io.github.kitswas.virtualgamepadmobile.ui.screens.ConnectingScreen
 import io.github.kitswas.virtualgamepadmobile.ui.screens.GamePad
 import io.github.kitswas.virtualgamepadmobile.ui.screens.GamepadCustomizationScreen
+import io.github.kitswas.virtualgamepadmobile.ui.screens.LayoutEditorScreen
 import io.github.kitswas.virtualgamepadmobile.ui.screens.MainMenu
 import io.github.kitswas.virtualgamepadmobile.ui.screens.SettingsScreen
 import io.github.kitswas.virtualgamepadmobile.ui.theme.VirtualGamePadMobileTheme
 import io.github.kitswas.virtualgamepadmobile.ui.utils.HapticUtils
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlin.system.exitProcess
 
 
@@ -74,6 +79,15 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(hapticEnabled.value) {
             HapticUtils.isEnabled = hapticEnabled.value
+        }
+
+        // While connected, a foreground service keeps the connection alive with the
+        // screen off; Android would otherwise destroy the socket of a background app.
+        val connection by connectionViewModel.uiState.collectAsState()
+        DisposableEffect(connection.connected) {
+            if (!connection.connected) return@DisposableEffect onDispose {}
+            ConnectionService.start(this@MainActivity, "${connection.ipAddress}:${connection.port}")
+            onDispose { ConnectionService.stop(this@MainActivity) }
         }
 
         val fullScreenEnabled = settingsRepository.fullScreenEnabled.collectAsState(
@@ -116,7 +130,14 @@ class MainActivity : ComponentActivity() {
     ) {
         NavHost(navController = navController, startDestination = "main_menu") {
             composable("main_menu") {
+                val savedConnections by settingsRepository.savedConnections.collectAsState(
+                    initial = emptyList()
+                )
+                val scope = rememberCoroutineScope()
                 MainMenu(
+                    savedConnections = savedConnections,
+                    onConnect = { navController.navigate("connecting_screen/${it.ipAddress}/${it.port}") },
+                    onDeleteConnection = { scope.launch { settingsRepository.deleteConnection(it.id) } },
                     onNavigateToConnectScreen = { navController.navigate("connect_screen") },
                     onNavigateToSettingsScreen = { navController.navigate("settings_screen") },
                     onNavigateToAboutScreen = { navController.navigate("about_screen") },
@@ -139,6 +160,7 @@ class MainActivity : ComponentActivity() {
                     onNavigateToConnectingScreen = { ipAddress, port ->
                         navController.navigate("connecting_screen/$ipAddress/$port")
                     },
+                    onSaveConnection = { settingsRepository.saveConnection(it) },
                     initialIp = initialIp,
                     initialPort = initialPort
                 )
@@ -155,7 +177,9 @@ class MainActivity : ComponentActivity() {
                 ConnectingScreen(
                     onNavigateToGamepad = {
                         navController.navigate("gamepad") {
-                            popUpTo("connect_screen") { inclusive = true }
+                            // Back from the gamepad returns to the menu, whether the
+                            // connection started there or on the connect screen.
+                            popUpTo("main_menu")
                         }
                     },
                     onNavigateBack = { navController.popBackStack() },
@@ -174,11 +198,18 @@ class MainActivity : ComponentActivity() {
                 SettingsScreen(
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToGamepadCustomization = { navController.navigate("gamepad_customization") },
+                    onNavigateToLayoutEditor = { navController.navigate("layout_editor") },
                     settingsRepository = settingsRepository
                 )
             }
             composable("gamepad_customization") {
                 GamepadCustomizationScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    settingsRepository = settingsRepository
+                )
+            }
+            composable("layout_editor") {
+                LayoutEditorScreen(
                     onNavigateBack = { navController.popBackStack() },
                     settingsRepository = settingsRepository
                 )

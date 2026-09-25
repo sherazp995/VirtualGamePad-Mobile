@@ -2,39 +2,44 @@ package io.github.kitswas.virtualgamepadmobile.ui.composables
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.kitswas.VGP_Data_Exchange.GamepadReading
-import io.github.kitswas.virtualgamepadmobile.data.ButtonAnchor
 import io.github.kitswas.virtualgamepadmobile.data.ButtonComponent
 import io.github.kitswas.virtualgamepadmobile.data.ButtonConfig
+import io.github.kitswas.virtualgamepadmobile.data.CustomButton
+import io.github.kitswas.virtualgamepadmobile.data.LayoutItem
+
+/** Used only when the screen reports no contact size: about a fingertip. */
+private val fallbackContactRadius = 20.dp
+
+/** Largest contact counted, so a palm resting on the screen doesn't press everything. */
+private val maxContactRadius = 48.dp
 
 /**
- * Convert ButtonAnchor to Compose Alignment
+ * @param customButtons the user's numbered combo buttons, drawn on top of the built-in controls
+ * @param itemModifier extra modifier for each control, after its placement.
+ * The visual layout editor uses it to highlight and measure controls.
+ * @param showHidden draw hidden controls faded, so the layout editor can show them again.
  */
-private fun ButtonAnchor.toAlignment(): Alignment = when (this) {
-    ButtonAnchor.TOP_LEFT -> Alignment.TopStart
-    ButtonAnchor.TOP_CENTER -> Alignment.TopCenter
-    ButtonAnchor.TOP_RIGHT -> Alignment.TopEnd
-    ButtonAnchor.CENTER_LEFT -> Alignment.CenterStart
-    ButtonAnchor.CENTER -> Alignment.Center
-    ButtonAnchor.CENTER_RIGHT -> Alignment.CenterEnd
-    ButtonAnchor.BOTTOM_LEFT -> Alignment.BottomStart
-    ButtonAnchor.BOTTOM_CENTER -> Alignment.BottomCenter
-    ButtonAnchor.BOTTOM_RIGHT -> Alignment.BottomEnd
-}
-
 @Composable
 fun DrawGamepad(
     widthDp: Int,
     heightDp: Int,
     gamepadState: GamepadReading,
     buttonConfigs: Map<ButtonComponent, ButtonConfig>,
+    customButtons: List<CustomButton> = emptyList(),
+    itemModifier: (LayoutItem) -> Modifier = { Modifier },
+    showHidden: Boolean = false,
 ) {
     // Assuming Landscape orientation
     val baseDp = heightDp
@@ -45,112 +50,144 @@ fun DrawGamepad(
     fun getConfig(component: ButtonComponent) =
         buttonConfigs[component] ?: ButtonConfig.default(component)
 
-    // Helper function to render a button component
+    // Helper function to render a button component at its configured position
     @Composable
-    fun RenderComponent(component: ButtonComponent, content: @Composable (ButtonConfig) -> Unit) {
+    fun RenderComponent(
+        component: ButtonComponent,
+        content: @Composable (config: ButtonConfig, placement: Modifier) -> Unit
+    ) {
         val config = getConfig(component)
-        if (config.visible) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = config.anchor.toAlignment()
-            ) {
-                content(config)
-            }
-        }
+        Placed(
+            placement = config.placement,
+            baseDp = baseDp,
+            showHidden = showHidden,
+            itemModifier = itemModifier(LayoutItem.BuiltIn(component)),
+        ) { placement -> content(config, placement) }
     }
 
     // First we make a box that will contain the gamepad
     // And put padding around it so that it doesn't touch the edges of the screen
+    val view = LocalView.current
+    val router = remember(gamepadState) { TouchRouter(gamepadState, view) }
+    // Leaving the screen mid-press must not leave buttons stuck down on the PC.
+    DisposableEffect(router) {
+        onDispose { router.releaseAll() }
+    }
+
     Surface {
+        CompositionLocalProvider(LocalTouchRouter provides router) {
+        // Every finger on the gamepad goes through the router, so one touch can press
+        // buttons of different controls. Sticks consume their own drags and are skipped.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { router.coordinates = it }
+                .pointerInput(router) {
+                    val fallbackRadius = fallbackContactRadius.toPx()
+                    val maxSemiAxis = maxContactRadius.toPx()
+                    val claims = PointerClaims()
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val contacts = event.changes
+                                .filter { claims.isFree(it.id.value, it.pressed, it.isConsumed) }
+                                .map {
+                                    contactAt(it.position, event, router.coordinates, maxSemiAxis)
+                                        ?: Contact(it.position, fallbackRadius, fallbackRadius)
+                                }
+                            router.onContacts(contacts)
+                        }
+                    }
+                }
+        ) {
         Box(
             modifier = Modifier
                 .padding(deadZonePadding.dp)
                 .fillMaxSize()
         ) {
             // Left Analog Stick
-            RenderComponent(ButtonComponent.LEFT_ANALOG_STICK) { config ->
+            RenderComponent(ButtonComponent.LEFT_ANALOG_STICK) { config, placement ->
                 AnalogStick(
-                    modifier = Modifier.offset(
-                        x = (config.offsetX * baseDp).dp,
-                        y = (config.offsetY * baseDp).dp
-                    ),
+                    modifier = placement,
                     outerCircleWidth = (baseDp / 8 * config.scale).dp,
                     innerCircleRadius = (baseDp / 12 * config.scale).dp,
+                    rotation = config.rotation,
                     gamepadState = gamepadState,
                     type = AnalogStickType.LEFT,
                 )
             }
 
             // Right Analog Stick
-            RenderComponent(ButtonComponent.RIGHT_ANALOG_STICK) { config ->
+            RenderComponent(ButtonComponent.RIGHT_ANALOG_STICK) { config, placement ->
                 AnalogStick(
-                    modifier = Modifier.offset(
-                        x = (config.offsetX * baseDp).dp,
-                        y = (config.offsetY * baseDp).dp
-                    ),
+                    modifier = placement,
                     outerCircleWidth = (baseDp / 8 * config.scale).dp,
                     innerCircleRadius = (baseDp / 12 * config.scale).dp,
+                    rotation = config.rotation,
                     gamepadState = gamepadState,
                     type = AnalogStickType.RIGHT,
                 )
             }
 
             // D-Pad
-            RenderComponent(ButtonComponent.DPAD) { config ->
+            RenderComponent(ButtonComponent.DPAD) { config, placement ->
                 Dpad(
-                    modifier = Modifier.offset(
-                        x = (config.offsetX * baseDp).dp,
-                        y = (config.offsetY * baseDp).dp
-                    ),
+                    modifier = placement,
                     size = (0.45 * baseDp * config.scale).dp,
-                    gamepadState = gamepadState,
+                    rotation = config.rotation,
                 )
             }
 
             // Face Buttons
-            RenderComponent(ButtonComponent.FACE_BUTTONS) { config ->
+            RenderComponent(ButtonComponent.FACE_BUTTONS) { config, placement ->
                 FaceButtons(
-                    modifier = Modifier.offset(
-                        x = (config.offsetX * baseDp).dp,
-                        y = (config.offsetY * baseDp).dp
-                    ),
+                    modifier = placement,
                     size = (0.45 * baseDp * config.scale).dp,
-                    gamepadState = gamepadState,
                 )
             }
 
             // Left Trigger
-            RenderComponent(ButtonComponent.LEFT_TRIGGER) { config ->
+            RenderComponent(ButtonComponent.LEFT_TRIGGER) { config, placement ->
                 Trigger(
-                    modifier = Modifier.offset(
-                        x = (config.offsetX * baseDp).dp,
-                        y = (config.offsetY * baseDp).dp
-                    ),
+                    modifier = placement,
                     type = TriggerType.LEFT,
                     size = (baseDp / 6 * config.scale).dp,
-                    gamepadState = gamepadState,
                 )
             }
 
             // Right Trigger
-            RenderComponent(ButtonComponent.RIGHT_TRIGGER) { config ->
+            RenderComponent(ButtonComponent.RIGHT_TRIGGER) { config, placement ->
                 Trigger(
-                    modifier = Modifier.offset(
-                        x = (config.offsetX * baseDp).dp,
-                        y = (config.offsetY * baseDp).dp
-                    ),
+                    modifier = placement,
                     type = TriggerType.RIGHT,
                     size = (baseDp / 6 * config.scale).dp,
-                    gamepadState = gamepadState,
                 )
             }
 
             // Central Buttons (LB, RB, Select, Start)
             CentralButtons(
                 baseDp = baseDp,
-                gamepadState = gamepadState,
                 buttonConfigs = buttonConfigs,
+                itemModifier = itemModifier,
+                showHidden = showHidden,
             )
+
+            customButtons.forEach { button ->
+                Placed(
+                    placement = button.placement,
+                    baseDp = baseDp,
+                    showHidden = showHidden,
+                    itemModifier = itemModifier(LayoutItem.Custom(button.id)),
+                ) { placement ->
+                    ComboButton(
+                        button = button,
+                        modifier = placement,
+                        size = (baseDp / 7 * button.placement.scale).dp,
+                    )
+                }
+            }
+        }
+        }
         }
     }
 }

@@ -5,23 +5,30 @@ import android.net.InetAddresses
 import android.os.Build
 import android.util.Log
 import android.util.Patterns
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,14 +37,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -45,8 +51,11 @@ import io.github.kitswas.virtualgamepadmobile.R
 import io.github.kitswas.virtualgamepadmobile.data.PreviewBase
 import io.github.kitswas.virtualgamepadmobile.data.PreviewHeightDp
 import io.github.kitswas.virtualgamepadmobile.data.PreviewWidthDp
+import io.github.kitswas.virtualgamepadmobile.data.SavedConnection
 import io.github.kitswas.virtualgamepadmobile.ui.components.QRScanResult
 import io.github.kitswas.virtualgamepadmobile.ui.components.rememberQRCodeScanner
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SectionHeader
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SidebarItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -140,6 +149,7 @@ private fun processQRScanResult(
 @Composable
 fun ConnectMenu(
     onNavigateToConnectingScreen: (String, String) -> Unit,
+    onSaveConnection: suspend (SavedConnection) -> Unit,
     initialIp: String,
     initialPort: String
 ) {
@@ -158,129 +168,160 @@ fun ConnectMenu(
         )
     }
 
-    Scaffold(
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState)
-        }
-    ) { paddingValues ->
+    var ipAddress by rememberSaveable { mutableStateOf(initialIp) }
+    var port by rememberSaveable { mutableStateOf(initialPort) }
+    var name by rememberSaveable { mutableStateOf("") }
+    val isIPValid = validateIP(ipAddress)
+    val isPortValid = validatePort(port)
+    val canConnect = isIPValid && isPortValid
 
-        Column(
+    // Update state when parameters arrive asynchronously from DataStore
+    LaunchedEffect(initialIp, initialPort) {
+        if (ipAddress.isBlank() && initialIp.isNotBlank()) ipAddress = initialIp
+        if (port.isBlank() && initialPort.isNotBlank()) port = initialPort
+    }
+
+    val focusManager = LocalFocusManager.current
+    val savedMessage = stringResource(R.string.connect_saved, name.ifBlank { "$ipAddress:$port" })
+
+    fun attemptToConnect() {
+        if (canConnect) onNavigateToConnectingScreen(ipAddress, port)
+    }
+
+    fun save() {
+        if (!canConnect) return
+        scope.launch {
+            onSaveConnection(SavedConnection(name.ifBlank { "$ipAddress:$port" }, ipAddress, port))
+            snackbarHostState.showSnackbar(savedMessage, duration = SnackbarDuration.Short)
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { paddingValues ->
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(paddingValues)
         ) {
-            var ipAddress by rememberSaveable { mutableStateOf(initialIp) }
-            var port by rememberSaveable { mutableStateOf(initialPort) }
-            var isIPValid by rememberSaveable { mutableStateOf(validateIP(initialIp)) }
-            var isPortValid by rememberSaveable { mutableStateOf(validatePort(initialPort)) }
-
-            // Update state when parameters arrive asynchronously from DataStore
-            LaunchedEffect(initialIp, initialPort) {
-                if (ipAddress.isBlank() && initialIp.isNotBlank()) {
-                    ipAddress = initialIp
-                    isIPValid = validateIP(initialIp)
-                }
-                if (port.isBlank() && initialPort.isNotBlank()) {
-                    port = initialPort
-                    isPortValid = validatePort(initialPort)
-                }
-            }
-
-            val focusManager = LocalFocusManager.current
-            val connectErrorIpStr = stringResource(R.string.connect_error_ip)
-            val connectErrorPortStr = stringResource(R.string.connect_error_port)
-            val connectErrorParamsStr = stringResource(R.string.connect_error_params)
-
-            fun attemptToConnect() {
-                if (isIPValid && isPortValid) {
-                    // Navigate to the connecting screen with the IP and port
-                    onNavigateToConnectingScreen(ipAddress, port)
-                } else {
-                    scope.launch {
-                        val errorMessage = when {
-                            !isIPValid -> connectErrorIpStr
-                            !isPortValid -> connectErrorPortStr
-                            else -> connectErrorParamsStr
-                        }
-                        snackbarHostState.showSnackbar(
-                            message = errorMessage,
-                            duration = SnackbarDuration.Short
-                        )
+            // Other ways to connect on the left, the screen's actions pinned below them.
+            Column(
+                modifier = Modifier
+                    .width(240.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(
+                    stringResource(R.string.menu_start),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                SidebarItem(
+                    label = stringResource(R.string.connect_scan_qr),
+                    onClick = { qrCodeScanner() },
+                )
+                SidebarItem(
+                    label = stringResource(R.string.connect_download_server),
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, downloadsUrl.toUri()))
+                    },
+                )
+                Box(modifier = Modifier.weight(1f))
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Button(
+                        onClick = ::attemptToConnect,
+                        enabled = canConnect,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.connect_button))
+                    }
+                    OutlinedButton(
+                        onClick = ::save,
+                        enabled = canConnect,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.connect_save))
                     }
                 }
             }
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            Button(onClick = { qrCodeScanner() }, shape = CircleShape) {
-                Text(text = stringResource(R.string.connect_scan_qr))
-            }
-
-            TextField(
-                label = { Text(text = stringResource(R.string.connect_ip_label)) },
-                value = ipAddress,
-                onValueChange = {
-                    ipAddress = it
-                    isIPValid = validateIP(ipAddress)
-                },
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(
-                    onNext = {
-                        // Pressing Ime button would move the text indicator's focus to the bottom
-                        // field, if it exists!
-                        focusManager.moveFocus(FocusDirection.Down)
-                    }
-                ),
-                shape = RectangleShape,
-                modifier = Modifier.padding(0.dp, 5.dp),
-                isError = !isIPValid
-            )
-
-            TextField(
-                label = { Text(text = stringResource(R.string.connect_port_label)) },
-                value = port,
-                onValueChange = {
-                    port = it
-                    isPortValid = validatePort(port)
-                },
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
+            // The connection's details, as flat rows.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                SectionHeader(stringResource(R.string.connect_details))
+                ConnectField(
+                    label = stringResource(R.string.connect_name_label),
+                    value = name,
+                    onValueChange = { name = it },
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Next,
+                    onIme = { focusManager.moveFocus(FocusDirection.Down) },
+                )
+                ConnectField(
+                    label = stringResource(R.string.connect_ip_label),
+                    value = ipAddress,
+                    onValueChange = { ipAddress = it.trim() },
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Next,
+                    onIme = { focusManager.moveFocus(FocusDirection.Down) },
+                    error = stringResource(R.string.connect_error_ip).takeIf { ipAddress.isNotEmpty() && !isIPValid },
+                )
+                ConnectField(
+                    label = stringResource(R.string.connect_port_label),
+                    value = port,
+                    onValueChange = { port = it.trim() },
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                    onIme = {
                         focusManager.clearFocus()
                         attemptToConnect()
-                    }
-                ),
-                shape = RectangleShape,
-                modifier = Modifier.padding(0.dp, 5.dp),
-                isError = !isPortValid
-            )
-
-            Button(
-                onClick = { attemptToConnect() },
-                shape = CircleShape,
-                enabled = isIPValid && isPortValid,
-            ) {
-                Text(text = stringResource(R.string.connect_button))
-            }
-
-            OutlinedButton(
-                modifier = Modifier.offset(y = 16.dp),
-                shape = MaterialTheme.shapes.small,
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, downloadsUrl.toUri())
-                    context.startActivity(intent)
-                }) {
+                    },
+                    error = stringResource(R.string.connect_error_port).takeIf { port.isNotEmpty() && !isPortValid },
+                )
                 Text(
-                    text = stringResource(R.string.connect_download_server),
-                    style = MaterialTheme.typography.labelSmall
+                    stringResource(R.string.connect_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
                 )
             }
         }
     }
+}
+
+/** A full-width field row; an error shows under it only once something is typed. */
+@Composable
+private fun ConnectField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType,
+    imeAction: ImeAction,
+    onIme: () -> Unit,
+    error: String? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        isError = error != null,
+        supportingText = error?.let { { Text(it) } },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+        keyboardActions = KeyboardActions(onAny = { onIme() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    )
 }
 
 @Preview(
@@ -292,6 +333,7 @@ fun ConnectMenuPreview() {
     PreviewBase {
         ConnectMenu(
             onNavigateToConnectingScreen = { _, _ -> },
+            onSaveConnection = {},
             initialIp = "",
             initialPort = "12345"
         )

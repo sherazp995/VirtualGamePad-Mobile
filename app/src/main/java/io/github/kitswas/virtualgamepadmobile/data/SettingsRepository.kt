@@ -14,8 +14,8 @@ import kotlinx.serialization.json.Json
 
 val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-class SettingsRepository(context: Context) {
-    private val dataStore = context.settingsDataStore
+class SettingsRepository(private val dataStore: DataStore<Preferences>) {
+    constructor(context: Context) : this(context.settingsDataStore)
 
     val baseColor: Flow<BaseColor> = dataStore.data.map { preferences ->
         BaseColor.fromInt(preferences[BASE_COLOR] ?: defaultBaseColor.ordinal)
@@ -61,6 +61,26 @@ class SettingsRepository(context: Context) {
 
     val fullScreenEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[FULL_SCREEN_ENABLED] ?: defaultFullScreenEnabled
+    }
+
+    val customButtons: Flow<List<CustomButton>> = dataStore.data.map { preferences ->
+        preferences[CUSTOM_BUTTONS]?.let {
+            try {
+                Json.decodeFromString<List<CustomButton>>(it)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } ?: emptyList()
+    }
+
+    val savedConnections: Flow<List<SavedConnection>> = dataStore.data.map { preferences ->
+        preferences[SAVED_CONNECTIONS]?.let {
+            try {
+                Json.decodeFromString<List<SavedConnection>>(it)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } ?: emptyList()
     }
 
     suspend fun setBaseColor(baseColor: BaseColor) {
@@ -111,6 +131,12 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setCustomButtons(buttons: List<CustomButton>) {
+        dataStore.edit { preferences ->
+            preferences[CUSTOM_BUTTONS] = Json.encodeToString(buttons)
+        }
+    }
+
     suspend fun setLastConnectionCredentials(ipAddress: String, port: String) {
         dataStore.edit { preferences ->
             preferences[LAST_CONNECTION_IP_ADDRESS] = ipAddress
@@ -130,9 +156,40 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    /** Saves [connection], replacing any saved connection with the same name. */
+    suspend fun saveConnection(connection: SavedConnection) {
+        editSavedConnections { saved -> saved.filterNot { it.name == connection.name } + connection }
+    }
+
+    suspend fun deleteConnection(id: String) {
+        editSavedConnections { saved -> saved.filterNot { it.id == id } }
+    }
+
+    private suspend fun editSavedConnections(change: (List<SavedConnection>) -> List<SavedConnection>) {
+        dataStore.edit { preferences ->
+            val stored = preferences[SAVED_CONNECTIONS]
+            val saved = stored?.let {
+                try {
+                    Json.decodeFromString<List<SavedConnection>>(it)
+                } catch (e: Exception) {
+                    // Can't read them (e.g. saved by a newer version): keep a copy rather
+                    // than silently overwriting them with this change.
+                    preferences[UNREADABLE_SAVED_CONNECTIONS] = it
+                    emptyList()
+                }
+            } ?: emptyList()
+            preferences[SAVED_CONNECTIONS] = Json.encodeToString(change(saved))
+        }
+    }
+
+    /** Resets every setting and the layout. Saved connections are kept. */
     suspend fun resetAllSettings() {
         dataStore.edit { preferences ->
+            val savedConnections = preferences[SAVED_CONNECTIONS]
+            val unreadable = preferences[UNREADABLE_SAVED_CONNECTIONS]
             preferences.clear()
+            savedConnections?.let { preferences[SAVED_CONNECTIONS] = it }
+            unreadable?.let { preferences[UNREADABLE_SAVED_CONNECTIONS] = it }
         }
     }
 
@@ -147,5 +204,8 @@ class SettingsRepository(context: Context) {
         private val SAVE_CONNECTION_CREDENTIALS =
             booleanPreferencesKey("save_connection_credentials")
         private val FULL_SCREEN_ENABLED = booleanPreferencesKey("full_screen_enabled")
+        private val SAVED_CONNECTIONS = stringPreferencesKey("saved_connections")
+        private val UNREADABLE_SAVED_CONNECTIONS = stringPreferencesKey("saved_connections_unreadable")
+        private val CUSTOM_BUTTONS = stringPreferencesKey("custom_buttons")
     }
 }

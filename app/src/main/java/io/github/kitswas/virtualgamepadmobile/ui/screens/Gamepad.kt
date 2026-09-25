@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +49,8 @@ fun GamePad(
         settingsRepository.pollingDelay.collectAsState(defaultPollingDelay).value.toLong()
     val buttonConfigs =
         settingsRepository.buttonConfigs.collectAsState(defaultButtonConfigs).value
+    val customButtons =
+        settingsRepository.customButtons.collectAsState(emptyList()).value
 
     val configuration = LocalConfiguration.current
 
@@ -56,38 +59,38 @@ fun GamePad(
 
     val isStopping = remember { mutableStateOf(false) }
 
-    DrawGamepad(screenWidth, screenHeight, gamepadState, buttonConfigs)
+    DrawGamepad(screenWidth, screenHeight, gamepadState, buttonConfigs, customButtons)
 
     val activity = LocalContext.current.findActivity()
-    // disconnect on back press
-    androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-        .addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_DESTROY
-                && activity?.isChangingConfigurations != true // ignore screen rotation
-            ) {
-                if (connectionViewModel != null) {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            isStopping.value = true
-                            // unset all keys before disconnecting
-                            gamepadState.ButtonsUp = gamepadState.ButtonsDown
-                            gamepadState.ButtonsDown = 0
-                            gamepadState.LeftThumbstickX = 0F
-                            gamepadState.LeftThumbstickY = 0F
-                            gamepadState.RightThumbstickX = 0F
-                            gamepadState.RightThumbstickY = 0F
-                            gamepadState.LeftTrigger = 0F
-                            gamepadState.RightTrigger = 0F
-                            connectionViewModel.enqueueGamepadState(gamepadState)
-                            connectionViewModel.disconnect()
-                            Log.d(tag, "Disconnected")
-                        } catch (e: Exception) {
-                            Log.d(tag, "Error during disconnect: ${e.message}")
-                        }
-                    }
+    // Disconnect when the gamepad screen goes away (back press, connection lost, app
+    // closed), but not when the activity is only being recreated. Runs once, unlike the
+    // lifecycle observer that used to be added again on every recomposition.
+    DisposableEffect(connectionViewModel) {
+        onDispose {
+            if (connectionViewModel == null || activity?.isChangingConfigurations == true) {
+                return@onDispose
+            }
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    isStopping.value = true
+                    // unset all keys before disconnecting
+                    gamepadState.ButtonsUp = gamepadState.ButtonsDown
+                    gamepadState.ButtonsDown = 0
+                    gamepadState.LeftThumbstickX = 0F
+                    gamepadState.LeftThumbstickY = 0F
+                    gamepadState.RightThumbstickX = 0F
+                    gamepadState.RightThumbstickY = 0F
+                    gamepadState.LeftTrigger = 0F
+                    gamepadState.RightTrigger = 0F
+                    connectionViewModel.enqueueGamepadState(gamepadState)
+                    connectionViewModel.disconnect()
+                    Log.d(tag, "Disconnected")
+                } catch (e: Exception) {
+                    Log.d(tag, "Error during disconnect: ${e.message}")
                 }
             }
-        })
+        }
+    }
 
     // Monitor connection state and handle errors
     val connectionState by connectionViewModel?.uiState?.collectAsState()

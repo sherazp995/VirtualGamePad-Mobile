@@ -35,8 +35,9 @@ class NavigationE2ETest {
         composeTestRule.onNodeWithText(getString(R.string.menu_settings)).performClick()
         composeTestRule.onNodeWithText(getString(R.string.settings_title))
             .assertIsDisplayed() // Title
+        // Layout links live under their own category in the sidebar.
+        composeTestRule.onNodeWithText(getString(R.string.settings_section_layout)).performClick()
         composeTestRule.onNodeWithText(getString(R.string.settings_customize_layout))
-            .performScrollTo()
             .assertIsDisplayed()
 
         composeTestRule.onNodeWithText(getString(R.string.cancel)).performClick()
@@ -55,8 +56,8 @@ class NavigationE2ETest {
     @Test
     fun testNavigationToGamepadCustomization() {
         composeTestRule.onNodeWithText(getString(R.string.menu_settings)).performClick()
-        composeTestRule.onNodeWithText(getString(R.string.settings_customize_layout))
-            .performScrollTo().performClick()
+        composeTestRule.onNodeWithText(getString(R.string.settings_section_layout)).performClick()
+        composeTestRule.onNodeWithText(getString(R.string.settings_customize_layout)).performClick()
 
         // Verify we are on customization screen
         composeTestRule.onNodeWithText(getString(R.string.customization_title)).assertIsDisplayed()
@@ -66,5 +67,17 @@ class NavigationE2ETest {
 
         composeTestRule.onNodeWithText(getString(R.string.cancel)).performClick()
         composeTestRule.onNodeWithText(getString(R.string.menu_start)).assertIsDisplayed()
+    }
+
+    @Test
+    fun testNavigationToVisualLayoutEditor() {
+        composeTestRule.onNodeWithText(getString(R.string.menu_settings)).performClick()
+        composeTestRule.onNodeWithText(getString(R.string.settings_section_layout)).performClick()
+        composeTestRule.onNodeWithText(getString(R.string.settings_edit_layout_visually)).performClick()
+
+        composeTestRule.onNodeWithText(getString(R.string.layout_editor_move)).assertIsDisplayed()
+
+        composeTestRule.onNodeWithText(getString(R.string.cancel)).performClick()
+        composeTestRule.onNodeWithText(getString(R.string.settings_title)).assertIsDisplayed()
     }
 }

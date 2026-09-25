@@ -2,39 +2,55 @@ package io.github.kitswas.virtualgamepadmobile.ui.screens
 
 import android.os.Parcelable
 import android.util.Log
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.kitswas.virtualgamepadmobile.R
@@ -50,14 +66,20 @@ import io.github.kitswas.virtualgamepadmobile.data.defaultFullScreenEnabled
 import io.github.kitswas.virtualgamepadmobile.data.defaultHapticFeedbackEnabled
 import io.github.kitswas.virtualgamepadmobile.data.defaultPollingDelay
 import io.github.kitswas.virtualgamepadmobile.data.defaultSaveConnectionCredentials
-import io.github.kitswas.virtualgamepadmobile.ui.composables.ColorSchemePicker
-import io.github.kitswas.virtualgamepadmobile.ui.composables.ListItemPicker
-import io.github.kitswas.virtualgamepadmobile.ui.composables.SpinBox
-import kotlinx.coroutines.launch
+import io.github.kitswas.virtualgamepadmobile.ui.composables.ChoiceSetting
+import io.github.kitswas.virtualgamepadmobile.ui.composables.LinkSetting
+import io.github.kitswas.virtualgamepadmobile.ui.composables.RowDivider
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SectionHeader
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SidebarItem
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SliderSetting
+import io.github.kitswas.virtualgamepadmobile.ui.composables.SwitchSetting
 import kotlinx.coroutines.runBlocking
 import kotlinx.parcelize.Parcelize
+import kotlin.math.roundToInt
 
 private const val logTag = "SettingsScreen"
+
+private val pollingDelayRange = 20..200
 
 @Parcelize
 private data class SettingsChanges(
@@ -66,228 +88,232 @@ private data class SettingsChanges(
     val pollingDelay: Int? = null,
     val hapticFeedbackEnabled: Boolean? = null,
     val saveConnectionCredentials: Boolean? = null,
-    val fullScreenEnabled: Boolean? = null
+    val fullScreenEnabled: Boolean? = null,
 ) : Parcelable
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToGamepadCustomization: () -> Unit,
+    onNavigateToLayoutEditor: () -> Unit,
     settingsRepository: SettingsRepository
 ) {
     var settingsChanges by rememberSaveable { mutableStateOf(SettingsChanges()) }
+    var confirmingReset by rememberSaveable { mutableStateOf(false) }
+    var category by rememberSaveable { mutableStateOf(SettingsCategory.CONTROLS) }
+
+    val colorScheme by settingsRepository.colorScheme.collectAsState(initial = defaultColorScheme)
+    val baseColor by settingsRepository.baseColor.collectAsState(initial = defaultBaseColor)
+    val pollingDelay by settingsRepository.pollingDelay.collectAsState(initial = defaultPollingDelay)
+    val hapticEnabled by settingsRepository.hapticFeedbackEnabled.collectAsState(initial = defaultHapticFeedbackEnabled)
+    val saveCredentials by settingsRepository.saveConnectionCredentials.collectAsState(initial = defaultSaveConnectionCredentials)
+    val fullScreenEnabled by settingsRepository.fullScreenEnabled.collectAsState(initial = defaultFullScreenEnabled)
+
+    fun save() {
+        var changesSaved = 0
+        runBlocking {
+            try {
+                settingsChanges.colorScheme?.let { settingsRepository.setColorScheme(it); ++changesSaved }
+                settingsChanges.baseColor?.let { settingsRepository.setBaseColor(it); ++changesSaved }
+                settingsChanges.pollingDelay?.let { settingsRepository.setPollingDelay(it); ++changesSaved }
+                settingsChanges.hapticFeedbackEnabled?.let {
+                    settingsRepository.setHapticFeedbackEnabled(it); ++changesSaved
+                }
+                settingsChanges.saveConnectionCredentials?.let {
+                    settingsRepository.setSaveConnectionCredentials(it); ++changesSaved
+                }
+                settingsChanges.fullScreenEnabled?.let {
+                    settingsRepository.setFullScreenEnabled(it); ++changesSaved
+                }
+            } catch (e: Exception) {
+                Log.e(logTag, "Error saving settings", e)
+            }
+        }
+        Log.i(logTag, "Saved settings: $changesSaved")
+        onNavigateBack()
+    }
+
+    if (confirmingReset) {
+        AlertDialog(
+            onDismissRequest = { confirmingReset = false },
+            title = { Text(stringResource(R.string.settings_reset_title)) },
+            text = { Text(stringResource(R.string.settings_reset_desc)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmingReset = false
+                        settingsChanges = SettingsChanges()
+                        runBlocking { settingsRepository.resetAllSettings() }
+                        Log.i(logTag, "Settings reset to defaults")
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text(stringResource(R.string.settings_reset_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingReset = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     Scaffold { paddingValues ->
-        val colorScheme by settingsRepository.colorScheme.collectAsState(initial = defaultColorScheme)
-        val baseColor by settingsRepository.baseColor.collectAsState(initial = defaultBaseColor)
-        val pollingDelay by settingsRepository.pollingDelay.collectAsState(initial = defaultPollingDelay)
-        val hapticEnabled by settingsRepository.hapticFeedbackEnabled.collectAsState(initial = defaultHapticFeedbackEnabled)
-        val saveCredentials by settingsRepository.saveConnectionCredentials.collectAsState(initial = defaultSaveConnectionCredentials)
-        val fullScreenEnabled by settingsRepository.fullScreenEnabled.collectAsState(initial = defaultFullScreenEnabled)
-
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            verticalArrangement = Arrangement.SpaceAround,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(paddingValues)
         ) {
-            // Fixed title at the top
-            Text(
-                stringResource(R.string.settings_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(vertical = 8.dp)
+            SettingsSidebar(
+                selected = category,
+                onSelect = { category = it },
+                onRestoreDefaults = { confirmingReset = true },
+                onCancel = onNavigateBack,
+                onSave = ::save,
             )
-
-            // Scrollable settings content
-            val scrollState = rememberScrollState()
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.SpaceEvenly,
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxHeight()
+                    .verticalScroll(key(category) { rememberScrollState() })
             ) {
+                SectionHeader(stringResource(category.titleRes))
+                when (category) {
+                    SettingsCategory.CONTROLS -> {
+                        SwitchSetting(
+                            title = stringResource(R.string.settings_haptic_feedback),
+                            description = stringResource(R.string.settings_haptic_feedback_desc),
+                            checked = settingsChanges.hapticFeedbackEnabled ?: hapticEnabled,
+                            onCheckedChange = {
+                                settingsChanges = settingsChanges.copy(hapticFeedbackEnabled = it)
+                            },
+                        )
+                    }
 
-                ColorSchemePicker(selectedItem = settingsChanges.colorScheme ?: colorScheme) {
-                    settingsChanges = settingsChanges.copy(colorScheme = it)
-                }
+                    SettingsCategory.LAYOUT -> {
+                        LinkSetting(
+                            title = stringResource(R.string.settings_edit_layout_visually),
+                            description = stringResource(R.string.settings_edit_layout_visually_desc),
+                            onClick = onNavigateToLayoutEditor,
+                        )
+                        RowDivider()
+                        LinkSetting(
+                            title = stringResource(R.string.settings_customize_layout),
+                            description = stringResource(R.string.settings_customize_layout_desc),
+                            onClick = onNavigateToGamepadCustomization,
+                        )
+                    }
 
-                ListItemPicker(
-                    list = BaseColor.entries.asIterable(),
-                    selectedItem = settingsChanges.baseColor ?: baseColor,
-                    label = stringResource(R.string.settings_theme_color),
-                    formattedDisplay = { item ->
-                        Text(text = stringResource(item.nameRes))
-                    },
-                    onItemSelected = {
-                        settingsChanges = settingsChanges.copy(baseColor = it)
-                    })
+                    SettingsCategory.DISPLAY -> {
+                        ChoiceSetting(
+                            title = stringResource(R.string.settings_color_scheme),
+                            options = ColorScheme.entries,
+                            selected = settingsChanges.colorScheme ?: colorScheme,
+                            optionLabel = { stringResource(it.nameRes) },
+                            onSelect = { settingsChanges = settingsChanges.copy(colorScheme = it) },
+                        )
+                        RowDivider()
+                        ChoiceSetting(
+                            title = stringResource(R.string.settings_theme_color),
+                            options = BaseColor.entries,
+                            selected = settingsChanges.baseColor ?: baseColor,
+                            optionLabel = { stringResource(it.nameRes) },
+                            onSelect = { settingsChanges = settingsChanges.copy(baseColor = it) },
+                        )
+                        RowDivider()
+                        SwitchSetting(
+                            title = stringResource(R.string.settings_full_screen),
+                            description = stringResource(R.string.settings_full_screen_desc),
+                            checked = settingsChanges.fullScreenEnabled ?: fullScreenEnabled,
+                            onCheckedChange = { settingsChanges = settingsChanges.copy(fullScreenEnabled = it) },
+                        )
+                    }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    SpinBox(
-                        value = settingsChanges.pollingDelay ?: pollingDelay,
-                        onValueChange = {
-                            settingsChanges = settingsChanges.copy(pollingDelay = it)
-                        },
-                        label = stringResource(R.string.settings_polling_interval),
-                        minValue = 20,
-                        maxValue = 200,
-                        step = 10
-                    )
-
-                    val toolTipState = rememberTooltipState()
-                    val scope = rememberCoroutineScope()
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                            TooltipAnchorPosition.Start
-                        ),
-                        tooltip = {
-                            PlainTooltip(shadowElevation = 10.dp) {
-                                Text(
-                                    stringResource(R.string.settings_polling_interval_desc),
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                            }
-                        },
-                        state = toolTipState
-                    ) {
-                        IconButton(onClick = {
-                            scope.launch { toolTipState.show() }
-                        }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_info),
-                                contentDescription = stringResource(R.string.settings_polling_interval_info),
-                                tint = MaterialTheme.colorScheme.secondary,
-                            )
-                        }
+                    SettingsCategory.CONNECTION -> {
+                        val delay = settingsChanges.pollingDelay ?: pollingDelay
+                        SliderSetting(
+                            title = stringResource(R.string.settings_polling_interval),
+                            description = stringResource(R.string.settings_polling_interval_desc),
+                            valueLabel = stringResource(R.string.value_ms, delay),
+                            value = delay,
+                            range = pollingDelayRange,
+                            step = 10,
+                            onValueChange = { settingsChanges = settingsChanges.copy(pollingDelay = it) },
+                        )
+                        RowDivider()
+                        SwitchSetting(
+                            title = stringResource(R.string.settings_save_connection_credentials),
+                            description = stringResource(R.string.settings_save_connection_credentials_desc),
+                            checked = settingsChanges.saveConnectionCredentials ?: saveCredentials,
+                            onCheckedChange = {
+                                settingsChanges = settingsChanges.copy(saveConnectionCredentials = it)
+                            },
+                        )
                     }
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Text(
-                        stringResource(R.string.settings_haptic_feedback),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Switch(
-                        checked = settingsChanges.hapticFeedbackEnabled ?: hapticEnabled,
-                        onCheckedChange = {
-                            settingsChanges = settingsChanges.copy(hapticFeedbackEnabled = it)
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Text(
-                        stringResource(R.string.settings_full_screen),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Switch(
-                        checked = settingsChanges.fullScreenEnabled ?: fullScreenEnabled,
-                        onCheckedChange = {
-                            settingsChanges = settingsChanges.copy(fullScreenEnabled = it)
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Text(
-                        stringResource(R.string.settings_save_connection_credentials),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Switch(
-                        checked = settingsChanges.saveConnectionCredentials ?: saveCredentials,
-                        onCheckedChange = {
-                            settingsChanges = settingsChanges.copy(saveConnectionCredentials = it)
-                        }
-                    )
-                }
-
-                Button(
-                    onClick = onNavigateToGamepadCustomization,
-                    modifier = Modifier
-                        .fillMaxWidth(0.6f)
-                        .padding(vertical = 8.dp)
-                ) {
-                    Text(stringResource(R.string.settings_customize_layout))
-                }
-
             }
+        }
+    }
+}
 
-            // Fixed buttons at the bottom
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(onClick = {
-                    settingsChanges = SettingsChanges()
-                    runBlocking { settingsRepository.resetAllSettings() }
-                    Log.i(logTag, "Settings reset to defaults")
-                }) {
-                    Text(stringResource(R.string.reset))
-                }
+private enum class SettingsCategory(@StringRes val titleRes: Int) {
+    CONTROLS(R.string.settings_section_controls),
+    LAYOUT(R.string.settings_section_layout),
+    DISPLAY(R.string.settings_section_display),
+    CONNECTION(R.string.settings_section_connection),
+}
 
-                Button(onClick = {
-                    var changesSaved = 0
-                    runBlocking {
-                        try {
-                            settingsChanges.colorScheme?.let {
-                                settingsRepository.setColorScheme(
-                                    it
-                                ); ++changesSaved
-                            }
-                            settingsChanges.baseColor?.let { settingsRepository.setBaseColor(it); ++changesSaved }
-                            settingsChanges.pollingDelay?.let {
-                                settingsRepository.setPollingDelay(
-                                    it
-                                ); ++changesSaved
-                            }
-                            settingsChanges.hapticFeedbackEnabled?.let {
-                                settingsRepository.setHapticFeedbackEnabled(
-                                    it
-                                ); ++changesSaved
-                            }
-                            settingsChanges.saveConnectionCredentials?.let {
-                                settingsRepository.setSaveConnectionCredentials(
-                                    it
-                                ); ++changesSaved
-                            }
-                            settingsChanges.fullScreenEnabled?.let {
-                                settingsRepository.setFullScreenEnabled(
-                                    it
-                                ); ++changesSaved
-                            }
-                        } catch (e: Exception) {
-                            Log.e(logTag, "Error saving settings", e)
-                        }
-                    }
-                    Log.i(logTag, "Saved settings: $changesSaved")
-                    onNavigateBack()
-                }) {
-                    Text(stringResource(R.string.save))
-                }
-                Button(onClick = onNavigateBack) {
-                    Text(stringResource(R.string.cancel))
-                }
+/** Category list on the left, with the screen's actions pinned to the bottom. */
+@Composable
+private fun SettingsSidebar(
+    selected: SettingsCategory,
+    onSelect: (SettingsCategory) -> Unit,
+    onRestoreDefaults: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(220.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(vertical = 8.dp),
+    ) {
+        Text(
+            stringResource(R.string.settings_title),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            SettingsCategory.entries.forEach { entry ->
+                SidebarItem(
+                    label = stringResource(entry.titleRes),
+                    selected = entry == selected,
+                    onClick = { onSelect(entry) },
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.save))
+            }
+            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cancel))
+            }
+            TextButton(onClick = onRestoreDefaults, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.reset))
             }
         }
     }
@@ -303,6 +329,7 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             onNavigateBack = {},
             onNavigateToGamepadCustomization = {},
+            onNavigateToLayoutEditor = {},
             settingsRepository = SettingsRepository(LocalContext.current)
         )
     }
